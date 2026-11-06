@@ -1,0 +1,48 @@
+[project]
+name = "tabby"
+version = "0.1.0"
+description = "Scan a restaurant bill, assign items, split taxes exactly, settle with UPI."
+readme = "README.md"
+authors = [
+    { name = "iamfoss" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "aiosqlite>=0.22.1",
+    "fastapi[standard]>=0.143.2",
+    "jinja2>=3.1.6",
+    "onnxruntime>=1.31,<2",
+    "pillow>=12.3.0",
+    "pydantic-settings>=2.16.0",
+    "python-multipart>=0.0.32",
+    "rapidocr>=3.10,<3.11",
+    "segno>=1.6.6",
+]
+
+[project.scripts]
+tabby = "tabby:main"
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "hypothesis>=6.169.4",
+    "pytailwindcss>=0.4.2",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.17.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = ["ocr: loads the real OCR models (slower)"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]

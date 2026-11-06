@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Your share · Tabby{% endblock %}
+{% block body %}
+<div x-data='sharedView({ code: {{ code|tojson }} })' class="mx-auto flex min-h-dvh max-w-xl flex-col px-4 pb-16">
+  <header class="flex items-center justify-between pt-4 pb-6">
+    <a href="/" class="flex items-center gap-2">
+      <img src="/static/icons/icon.svg" alt="" class="size-8">
+      <span class="font-display text-2xl font-extrabold tracking-tight">tabby</span>
+    </a>
+    <span x-show="code" class="rounded-full border border-line px-3 py-1 font-mono text-sm tracking-[.25em]" x-text="code"></span>
+  </header>
+
+  <p x-show="loading" class="py-20 text-center text-muted">Opening the split…</p>
+
+  <div x-show="!loading && error" x-cloak class="flex flex-col items-center gap-4 py-16 text-center">
+    <p class="font-display text-2xl font-extrabold">Can't open this split</p>
+    <p class="text-muted" x-text="error"></p>
+    <a href="/" class="btn-primary">Start a new bill</a>
+  </div>
+
+  <template x-if="!loading && bill && result">
+    <section class="flex flex-col gap-4">
+      <div>
+        <h1 class="font-display text-4xl font-extrabold" x-text="bill.title || 'The bill'"></h1>
+        <p class="mt-1 text-muted">
+          <span class="money" x-text="money(result.bill_total)"></span> total
+          <template x-if="bill.people.find(p => p.id === payerId())">
+            <span>· paid by <span class="font-semibold text-ink" x-text="bill.people.find(p => p.id === payerId()).name"></span></span>
+          </template>
+        </p>
+        <p x-show="result.unclaimed !== 0" class="mt-3 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn">
+          <span class="money" x-text="money(result.unclaimed)"></span> of this bill was not assigned to anyone.
+        </p>
+      </div>
+
+      <p class="text-sm text-muted">Tap your name.</p>
+      <template x-for="p in result.people" :key="p.person_id">
+        <div class="card overflow-hidden">
+          <button class="flex w-full items-center gap-3 px-4 py-3 text-left" @click="openId = openId === p.person_id ? null : p.person_id">
+            <span class="flex-1 font-semibold" x-text="p.name"></span>
+            <span x-show="p.person_id === payerId()" class="text-xs text-accent">paid</span>
+            <span class="font-display text-2xl font-extrabold money" x-text="money(p.total)"></span>
+          </button>
+          <div x-show="openId === p.person_id" x-transition class="border-t border-line px-4 py-3 text-sm">
+            <template x-for="line in p.items"><div class="flex justify-between py-0.5"><span x-text="line.label"></span><span class="money" x-text="money(line.amount)"></span></div></template>
+            <template x-for="line in p.charges"><div class="flex justify-between py-0.5 text-muted"><span x-text="line.label"></span><span class="money" x-text="money(line.amount)"></span></div></template>
+            <button x-show="vpa && p.person_id !== payerId() && p.total > 0" class="btn-primary mt-3 w-full" @click="showQr(p)">Pay <span class="money" x-text="money(p.total)"></span> with UPI</button>
+            <p x-show="!vpa && p.person_id !== payerId()" class="mt-3 text-xs text-muted">The payer didn't add a UPI ID. Pay them directly.</p>
+          </div>
+        </div>
+      </template>
+    </section>
+  </template>
+
+  {% include "_qr.html" %}
+</div>
+{% endblock %}

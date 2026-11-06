@@ -1,0 +1,15 @@
+{# Full-screen UPI QR. Expects `qr` = {svg, link, person, amount} on the Alpine component. #}
+<div x-show="qr" x-cloak x-transition.opacity
+     class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-5 bg-paper px-6 text-center"
+     @keydown.escape.window="qr = null" role="dialog" aria-modal="true">
+  <template x-if="qr">
+    <div class="flex w-full max-w-sm flex-col items-center gap-5">
+      <p class="text-sm uppercase tracking-widest text-muted" x-text="qr.person + ' pays'"></p>
+      <p class="font-display text-5xl font-extrabold money" x-text="money(qr.amount)"></p>
+      <div class="w-full max-w-72 rounded-3xl bg-white p-3 shadow-sm [&_svg]:h-auto [&_svg]:w-full" x-html="qr.svg"></div>
+      <p class="text-sm text-muted">Scan with any UPI app.</p>
+      <a class="btn-primary w-full" :href="qr.link">Open UPI app</a>
+      <button class="btn-ghost w-full" @click="qr = null">Done</button>
+    </div>
+  </template>
+</div>

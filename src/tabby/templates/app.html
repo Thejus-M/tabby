@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% block body %}
+<div x-data="tabby()" class="mx-auto flex min-h-dvh max-w-xl flex-col">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-30 bg-paper/90 px-4 pt-4 pb-3 backdrop-blur">
+    <div class="flex items-center justify-between">
+      <button class="flex items-center gap-2" @click="go('start')" aria-label="Tabby home">
+        <img src="/static/icons/icon.svg" alt="" class="size-8">
+        <span class="font-display text-2xl font-extrabold tracking-tight">tabby</span>
+      </button>
+      <button x-show="bill.items.length" x-cloak class="text-sm font-medium text-muted underline-offset-4 hover:underline" @click="reset()">New bill</button>
+    </div>
+    <nav x-show="step !== 'start'" x-cloak class="mt-3 grid grid-cols-4 gap-1.5" aria-label="Steps">
+      <template x-for="(s, i) in steps" :key="s">
+        <button class="group flex flex-col gap-1 text-left" :disabled="!canGo(s)" @click="go(s)">
+          <span class="h-1 rounded-full transition" :class="i <= stepIndex() ? 'bg-accent' : 'bg-line'"></span>
+          <span class="text-xs font-medium capitalize" :class="s === step ? 'text-ink' : 'text-muted'" x-text="s"></span>
+        </button>
+      </template>
+    </nav>
+  </header>
+
+  <main class="flex-1 px-4 pb-36">
+    <!-- Error banner -->
+    <div x-show="error" x-cloak class="mb-4 flex items-start gap-3 rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-sm text-bad" role="alert">
+      <span class="flex-1" x-text="error"></span>
+      <button class="font-semibold" @click="error = ''" aria-label="Dismiss">✕</button>
+    </div>
+
+    <!-- START -->
+    <section x-show="step === 'start'" class="flex flex-col gap-8 pt-6">
+      <div>
+        <h1 class="font-display text-5xl leading-[1.05] font-extrabold tracking-tight">Who had<br>the biryani?</h1>
+        <p class="mt-4 max-w-sm text-lg text-muted">Snap the bill, tap who ate what, and everyone gets their exact share. Taxes included, down to the paisa.</p>
+      </div>
+
+      <div class="flex flex-col gap-3">
+        <label class="btn-primary cursor-pointer py-4 text-lg" :class="busy && 'pointer-events-none opacity-60'">
+          <input type="file" accept="image/*" capture="environment" class="sr-only" @change="scan($event)" :disabled="busy">
+          <span x-show="!busy">📷&nbsp; Scan the bill</span>
+          <span x-show="busy" x-cloak>Reading the bill… a few seconds</span>
+        </label>
+        <label class="btn-ghost cursor-pointer" :class="busy && 'pointer-events-none opacity-40'">
+          <input type="file" accept="image/*" class="sr-only" @change="scan($event)" :disabled="busy">
+          Pick a photo
+        </label>
+        <button class="btn-ghost" @click="manual()">Type it in</button>
+        <p class="text-xs text-muted">Tip: lay the bill flat, fill the frame, avoid shadows.</p>
+        <button x-show="bill.items.length" x-cloak class="btn-ghost" @click="go('items')">Continue current bill</button>
+      </div>
+
+      <form class="card flex items-center gap-2 p-2 pl-4" @submit.prevent="join()">
+        <span class="text-sm text-muted">Got a code?</span>
+        <input x-model="joinCode" maxlength="6" placeholder="ABC234" autocapitalize="characters" class="min-w-0 flex-1 border-0 bg-transparent font-mono uppercase tracking-[.3em]" aria-label="Share code">
+        <button class="btn-ghost px-4 py-2" :disabled="joinCode.trim().length !== 6">Open</button>
+      </form>
+
+      <p class="text-xs text-muted">Bills are read by an OCR model on this server, in memory, then discarded. No outside service or AI ever sees them. Nothing is saved unless you share a split (kept 30 days).</p>
+    </section>
+
+    <!-- ITEMS -->
+    <section x-show="step === 'items'" x-cloak class="flex flex-col gap-4">
+      <div class="flex items-end justify-between gap-3">
+        <div class="min-w-0 flex-1">
+          <input x-model="bill.title" placeholder="Where did you eat?" class="w-full border-0 bg-transparent px-0 font-display text-3xl font-extrabold placeholder:text-muted/60" aria-label="Bill title">
+        </div>
+      </div>
+
+      <div x-show="scanNote || scanWarnings.length || Object.keys(scanFlags).length" x-cloak
+           class="flex flex-col gap-1 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn">
+        <p x-show="scanNote" x-text="scanNote"></p>
+        <template x-for="w in scanWarnings"><p x-text="w"></p></template>
+        <p x-show="Object.keys(scanFlags).length">Highlighted rows were hard to read. Compare them with the photo.</p>
+      </div>
+
+      <details x-show="photoUrl" x-cloak open class="card overflow-hidden">
+        <summary class="cursor-pointer px-4 py-2 text-sm font-medium text-muted">Bill photo</summary>
+        <img :src="photoUrl" alt="The bill you scanned" class="max-h-80 w-full bg-paper object-contain"
+             :class="$el.dataset.big && 'max-h-none'" @click="$el.dataset.big = $el.dataset.big ? '' : '1'">
+      </details>
+
+      <div class="card overflow-hidden">
+        <template x-for="item in bill.items" :key="item.id">
+          <div class="flex items-center gap-2 border-b border-line px-3 py-2 last:border-b-0" :class="scanFlags[item.id] && 'bg-warn/10'"
+               @input="unflag(item.id)" :title="scanFlags[item.id] || ''">
+            <span x-show="scanFlags[item.id]" class="shrink-0 rounded-full bg-warn/20 px-1.5 text-[10px] font-bold uppercase text-warn">check</span>
+            <input data-item-name x-model="item.name" placeholder="Item" class="min-w-0 flex-1 border-0 bg-transparent px-1" aria-label="Item name">
+            <button class="rounded-full px-2 py-1 text-xs font-semibold" :class="item.category === 'liquor' ? 'bg-accent/15 text-accent' : 'text-muted'"
+                    @click="item.category = item.category === 'liquor' ? 'food' : 'liquor'; unflag(item.id)"
+                    :aria-pressed="item.category === 'liquor'" title="Mark as alcohol (VAT applies only to drinkers)">🍺</button>
+            <div class="flex items-center">
+              <span class="text-muted">₹</span>
+              <input inputmode="decimal" class="w-24 border-0 bg-transparent px-1 text-right money" aria-label="Amount"
+                     :value="item.amount ? rupees(item.amount) : ''" placeholder="0.00"
+                     @change="item.amount = Math.max(0, toPaise($event.target.value)); unflag(item.id); $event.target.value = item.amount ? rupees(item.amount) : ''">
+            </div>
+            <button class="px-1 text-muted hover:text-bad" @click="removeItem(item.id)" aria-label="Remove item">✕</button>
+          </div>
+        </template>
+        <button class="w-full px-4 py-3 text-left font-medium text-accent" @click="addItem()">+ Add item</button>
+      </div>
+
+      <div class="card overflow-hidden">
+        <div class="flex items-center justify-between px-4 pt-3 pb-1">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-muted">Taxes &amp; charges</h2>
+        </div>
+        <template x-for="c in bill.charges" :key="c.id">
+          <div class="border-b border-line px-3 py-2 last:border-b-0" :class="[!c.enabled && 'opacity-50', scanFlags[c.id] && 'bg-warn/10']"
+               @input="unflag(c.id)" :title="scanFlags[c.id] || ''">
+            <div class="flex items-center gap-2">
+              <input type="checkbox" x-model="c.enabled" class="size-4 accent-[var(--accent)] p-0" :aria-label="'Include ' + c.name">
+              <input x-model="c.name" class="min-w-0 flex-1 border-0 bg-transparent px-1" aria-label="Charge name">
+              <span class="text-muted" x-text="c.kind === 'discount' ? '−₹' : '₹'"></span>
+              <input inputmode="decimal" class="w-24 border-0 bg-transparent px-1 text-right money" aria-label="Charge amount"
+                     :value="rupees(Math.abs(c.amount))" @change="setChargeAmount(c, $event.target.value); $event.target.value = rupees(Math.abs(c.amount))">
+              <button class="px-1 text-muted hover:text-bad" @click="bill.charges = bill.charges.filter(x => x.id !== c.id)" aria-label="Remove charge">✕</button>
+            </div>
+            <div class="mt-1 flex items-center gap-2 pl-7 text-xs text-muted">
+              <span>Split over</span>
+              <select x-model="c.scope" class="px-2 py-0.5 text-xs" aria-label="Charged on">
+                <option value="all">everything</option>
+                <option value="food">food only</option>
+                <option value="liquor">drinks only</option>
+              </select>
+            </div>
+            <p x-show="c.kind === 'service' && c.enabled" class="mt-1 pl-7 text-xs text-warn">Service charge is optional. Under CCPA guidelines (2022) you can ask the restaurant to remove it.</p>
+          </div>
+        </template>
+        <div class="flex flex-wrap gap-2 px-3 py-3">
+          <button class="chip" @click="addCharge('tax')">+ Tax</button>
+          <button class="chip" @click="addCharge('service')">+ Service</button>
+          <button class="chip" @click="addCharge('discount')">+ Discount</button>
+          <button class="chip" @click="addCharge('other')">+ Other</button>
+        </div>
+      </div>
+
+      <div class="flex items-baseline justify-between px-1">
+        <span class="text-muted">Bill total</span>
+        <span class="font-display text-3xl font-extrabold money" x-text="money(result?.bill_total ?? itemsTotal())"></span>
+      </div>
+    </section>
+
+    <!-- PEOPLE -->
+    <section x-show="step === 'people'" x-cloak class="flex flex-col gap-5">
+      <h1 class="font-display text-3xl font-extrabold">Who's splitting?</h1>
+      <form class="flex gap-2" @submit.prevent="addPerson()">
+        <input x-model="newPerson" placeholder="Names, comma separated" class="min-w-0 flex-1 py-3" aria-label="Person name" autocomplete="off">
+        <button class="btn-primary px-5" :disabled="!newPerson.trim()">Add</button>
+      </form>
+
+      <div class="flex flex-col gap-2">
+        <template x-for="p in bill.people" :key="p.id">
+          <div class="card flex items-center gap-3 px-3 py-2.5">
+            <span class="grid size-9 place-items-center rounded-full bg-ink text-xs font-bold text-paper" x-text="initials(p.name)"></span>
+            <input x-model="p.name" class="min-w-0 flex-1 border-0 bg-transparent px-0 font-medium" aria-label="Name">
+            <label class="flex items-center gap-1.5 text-xs" :class="bill.payer_id === p.id ? 'text-accent font-semibold' : 'text-muted'">
+              <input type="radio" name="payer" :value="p.id" x-model="bill.payer_id" class="accent-[var(--accent)] p-0">
+              paid
+            </label>
+            <button class="px-1 text-muted hover:text-bad" @click="removePerson(p.id)" aria-label="Remove person">✕</button>
+          </div>
+        </template>
+        <p x-show="!bill.people.length" class="py-6 text-center text-muted">Add everyone at the table, including whoever paid.</p>
+      </div>
+
+      <div class="card flex flex-col gap-2 p-4" x-show="bill.people.length">
+        <label class="text-sm font-semibold" for="vpa">UPI ID of <span x-text="payer()?.name || 'the payer'"></span></label>
+        <input id="vpa" x-model="vpa" placeholder="name@okbank" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <p class="text-xs text-muted">Used for payment QR codes. Kept on this device and in links you share, never stored on the server.</p>
+      </div>
+    </section>
+
+    <!-- ASSIGN -->
+    <section x-show="step === 'assign'" x-cloak class="flex flex-col gap-4">
+      <div>
+        <div class="flex items-baseline justify-between">
+          <h1 class="font-display text-3xl font-extrabold">Who had what?</h1>
+          <span class="text-sm font-semibold money" x-text="progress() + '%'"></span>
+        </div>
+        <div class="mt-2 h-2 overflow-hidden rounded-full bg-line">
+          <div class="h-full rounded-full bg-accent transition-all duration-300" :style="`width: ${progress()}%`"></div>
+        </div>
+        <p class="mt-2 text-sm text-muted">
+          <template x-if="result && result.unclaimed !== 0"><span><span class="font-semibold text-ink money" x-text="money(result.unclaimed)"></span> still unclaimed.</span></template>
+          <template x-if="result && result.unclaimed === 0"><span class="font-semibold text-good">Everything's claimed.</span></template>
+        </p>
+      </div>
+
+      <!-- people selector, sticky so it stays reachable while scrolling items -->
+      <div class="sticky top-[5.5rem] z-20 -mx-4 bg-paper/95 px-4 py-2 backdrop-blur">
+        <p class="mb-2 text-xs text-muted" x-text="selected.length ? 'Now tap items to split them between ' + selected.map((id) => personName(id)).join(', ') : 'Pick people, then tap items they shared.'"></p>
+        <div class="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+          <button class="chip shrink-0" :class="selected.length === bill.people.length && 'chip-on'" @click="selectAll()">All</button>
+          <template x-for="p in bill.people" :key="p.id">
+            <button class="chip shrink-0" :class="selected.includes(p.id) && 'chip-on'" @click="toggleSelected(p.id)" :aria-pressed="selected.includes(p.id)">
+              <span x-text="p.name"></span>
+              <span class="money text-xs opacity-70" x-text="money(personTotal(p.id))"></span>
+            </button>
+          </template>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-2">
+        <template x-for="item in bill.items" :key="item.id">
+          <div class="card overflow-hidden transition" :class="owners(item.id).length ? 'border-accent/40' : ''">
+            <button class="flex w-full items-center gap-3 px-4 py-3 text-left" @click="tapItem(item)">
+              <div class="min-w-0 flex-1">
+                <p class="truncate font-medium" x-text="item.name || 'Item'"></p>
+                <p class="mt-0.5 truncate text-xs" :class="owners(item.id).length ? 'text-accent' : 'text-muted'"
+                   x-text="owners(item.id).length ? owners(item.id).map(([id, w]) => personName(id) + (w > 1 ? ' ×' + w : '')).join(', ') : 'Unclaimed'"></p>
+              </div>
+              <span class="money font-semibold" x-text="money(item.amount)"></span>
+            </button>
+            <div class="flex justify-end px-3 pb-2" x-show="expanded !== item.id">
+              <button class="text-xs text-muted underline-offset-2 hover:underline" @click="expanded = item.id">Uneven split</button>
+            </div>
+            <div x-show="expanded === item.id" x-transition class="border-t border-line bg-paper/50 px-4 py-3">
+              <p class="mb-2 text-xs text-muted">Portions each person had. 2 means twice as much as 1.</p>
+              <template x-for="p in bill.people" :key="p.id">
+                <div class="flex items-center justify-between py-1">
+                  <span class="text-sm" x-text="p.name"></span>
+                  <div class="flex items-center gap-3">
+                    <button class="grid size-8 place-items-center rounded-full border border-line" @click="bump(item.id, p.id, -1)" aria-label="Less">−</button>
+                    <span class="w-5 text-center money" x-text="sharesOf(item.id)[p.id] || 0"></span>
+                    <button class="grid size-8 place-items-center rounded-full border border-line" @click="bump(item.id, p.id, 1)" aria-label="More">+</button>
+                  </div>
+                </div>
+              </template>
+              <button class="mt-2 text-xs font-semibold text-accent" @click="expanded = null">Done</button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <!-- SETTLE -->
+    <section x-show="step === 'settle'" x-cloak class="flex flex-col gap-4">
+      <h1 class="font-display text-3xl font-extrabold">Settle up</h1>
+      <p x-show="result && result.unclaimed !== 0" class="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn">
+        <span class="money" x-text="money(result?.unclaimed)"></span> is not assigned to anyone yet.
+        <button class="font-semibold underline" @click="go('assign')">Assign it</button>
+      </p>
+      <template x-for="w in (result?.warnings || [])"><p class="text-xs text-warn" x-text="w"></p></template>
+
+      <template x-for="p in (result?.people || [])" :key="p.person_id">
+        <div class="card overflow-hidden">
+          <div class="flex items-center gap-3 px-4 py-3">
+            <span class="grid size-10 place-items-center rounded-full text-sm font-bold" :class="p.person_id === bill.payer_id ? 'bg-accent text-accent-ink' : 'bg-ink text-paper'" x-text="initials(p.name)"></span>
+            <div class="min-w-0 flex-1">
+              <p class="font-semibold" x-text="p.name"></p>
+              <p class="text-xs text-muted" x-text="p.person_id === bill.payer_id ? 'Paid the bill' : 'Owes ' + (payer()?.name || 'the payer')"></p>
+            </div>
+            <span class="font-display text-2xl font-extrabold money" x-text="money(p.total)"></span>
+          </div>
+          <details class="border-t border-line px-4 py-2 text-sm">
+            <summary class="cursor-pointer text-xs text-muted">Breakdown</summary>
+            <div class="mt-2 flex flex-col gap-1 pb-1">
+              <template x-for="line in p.items"><div class="flex justify-between"><span x-text="line.label"></span><span class="money" x-text="money(line.amount)"></span></div></template>
+              <template x-for="line in p.charges"><div class="flex justify-between text-muted"><span x-text="line.label"></span><span class="money" x-text="money(line.amount)"></span></div></template>
+            </div>
+          </details>
+          <div class="px-4 pb-3" x-show="p.person_id !== bill.payer_id && p.total > 0">
+            <button class="btn-ghost w-full py-2 text-sm" @click="showQr(p)">Show UPI QR</button>
+          </div>
+        </div>
+      </template>
+
+      <div class="card mt-2 flex flex-col gap-3 p-4">
+        <h2 class="font-semibold">Send it to the group</h2>
+        <button class="btn-primary" @click="shareCode()" :disabled="busy">Share with a 6-letter code</button>
+        <button class="btn-ghost" @click="shareFragment()">Share link only (nothing stored)</button>
+        <p class="text-xs text-muted">Code links keep the bill on the server for 30 days. Link-only puts the whole bill inside the URL.</p>
+        <input x-show="shareLink" x-cloak readonly :value="shareLink" class="text-xs" @focus="$event.target.select()" aria-label="Share link">
+      </div>
+    </section>
+  </main>
+
+  <!-- Bottom action bar -->
+  <footer x-show="step !== 'start'" x-cloak class="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper/95 backdrop-blur">
+    <div class="mx-auto flex max-w-xl items-center gap-3 px-4 pt-3 pb-[max(.75rem,env(safe-area-inset-bottom))]">
+      <button class="btn-ghost" x-show="stepIndex() > 0" @click="go(steps[stepIndex() - 1])">Back</button>
+      <div class="min-w-0 flex-1 text-right text-sm">
+        <span class="text-muted">Total </span><span class="font-semibold money" x-text="money(result?.bill_total ?? itemsTotal())"></span>
+      </div>
+      <button class="btn-primary" x-show="stepIndex() < steps.length - 1"
+              :disabled="!canGo(steps[stepIndex() + 1])" @click="go(steps[stepIndex() + 1])">
+        <span x-text="{items: 'Add people', people: 'Assign items', assign: 'Settle up'}[step]"></span>
+      </button>
+    </div>
+  </footer>
+
+  <div x-show="toast" x-cloak x-transition class="fixed inset-x-0 bottom-24 z-40 mx-auto w-fit rounded-full bg-ink px-4 py-2 text-sm font-medium text-paper shadow-lg" x-text="toast"></div>
+
+  {% include "_qr.html" %}
+</div>
+{% endblock %}
